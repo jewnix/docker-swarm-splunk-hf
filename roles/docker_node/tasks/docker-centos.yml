@@ -1,0 +1,63 @@
+- name: Replace mirrorlist with commented mirrorlist in CentOS-Base.repo
+  replace:
+    path: /etc/yum.repos.d/CentOS-Base.repo
+    regexp: "^mirrorlist="
+    replace: "#mirrorlist="
+  become: true
+
+- name: Uncomment and update baseurl to point to vault.centos.org
+  replace:
+    path: /etc/yum.repos.d/CentOS-Base.repo
+    regexp: "^#baseurl=http://mirror.centos.org"
+    replace: "baseurl=http://vault.centos.org"
+  become: true
+
+- name: Install yum-utils for repository management
+  yum:
+    name: yum-utils
+    state: present
+  become: true
+
+- name: Add Docker CE repository for CentOS
+  command: yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+  args:
+    creates: /etc/yum.repos.d/docker-ce.repo
+  become: true
+
+- name: install docker packages
+  package:
+    name: "{{ item }}"
+    state: present
+  become: true
+  register: docker_install_results
+  loop: "{{ centos_packages }}"
+
+- name: flag docker service for restart if any changes to installed packages
+  set_fact:
+    docker_service_state: restarted
+  loop: "{{ docker_install_results.results }}"
+  when: item.changed
+
+# this will make use of the docker_service_state value set above
+# this will always get run to at least ensure the service is enabled/started, but will
+# also restart the service if any chnages to the packages were made
+- include_tasks: docker-enable-start-restart.yml
+
+- name: make sure docker is running
+  include_tasks: docker-daemon-running.yml
+
+- name: install /etc/docker/daemon.json
+  template:
+    src: daemon.json
+    dest: /etc/docker/daemon.json
+  become: true
+  register: docker_daemon_json_result
+
+# this could be done via a handler, but since it would only be used once not bothering
+- include_tasks: docker-enable-start-restart.yml
+  vars:
+    docker_service_state: restarted
+  when: docker_daemon_json_result.changed
+
+- name: make sure docker is running
+  include_tasks: docker-daemon-running.yml

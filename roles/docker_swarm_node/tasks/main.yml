@@ -1,10 +1,20 @@
-- include_tasks: swarm_firewall_ports.yml
+- name: firewall ports
+  include_tasks: swarm_firewall_ports.yml
+  when: "'enable_firewall' in ansible_run_tags"
+  tags: enable_firewall
 
 - include_tasks: existing_join_tokens.yml
 
 - when: "('docker_swarm_managers' in group_names) and (manager_join_token is not defined)"
-  include_tasks: new_swarm.yml
-
-- include_tasks: existing_join_tokens.yml
+  block:
+    - include_tasks: new_swarm.yml
+    - include_tasks: existing_join_tokens.yml #rerun this to get the token as well as the active manager
 
 - include_tasks: join_swarm.yml
+
+- name: fetch swarm status of all nodes
+  community.docker.docker_swarm_info:
+  register: swarm_info
+  become: true
+  when: "('docker_swarm_managers' in group_names) and (manager_join_token is defined)"
+  loop: "{{ groups['docker_swarm_managers'] }}"

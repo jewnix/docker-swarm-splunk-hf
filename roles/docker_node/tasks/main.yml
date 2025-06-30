@@ -1,40 +1,17 @@
-- name: install docker packages
-  package:
-    name: "{{ item }}"
-    state: present
-  become: true
-  register: docker_install_results
-  loop:
-    - "{{ docker_ce_cli_package }}"
-    - "{{ containerd_io_package }}"
-    - "{{ docker_ce_package }}"
-
-- name: flag docker service for restart if any changes to installed packages
+- name: Set OS-specific Docker task file for CentOS
+  when: ansible_distribution == 'CentOS'
   set_fact:
-    docker_service_state: restarted
-  loop: "{{ docker_install_results.results }}"
-  when: item.changed
+    docker_task_file: "docker-centos.yml"
 
-# this will make use of the docker_service_state value set above
-# this will always get run to at least ensure the service is enabled/started, but will
-# also restart the service if any chnages to the packages were made
-- include_tasks: docker-enable-start-restart.yml
+- name: Set OS-specific Docker task file for Ubuntu
+  when: ansible_distribution == 'Ubuntu'
+  set_fact:
+    docker_task_file: "docker-ubuntu.yml"
 
-- name: make sure docker is running
-  include_tasks: docker-daemon-running.yml
+- name: Fail if the OS is not supported
+  when: ansible_distribution not in ['CentOS', 'Ubuntu']
+  fail:
+    msg: "Unsupported OS: {{ ansible_distribution }}"
 
-- name: install /etc/docker/daemon.json
-  template:
-    src: daemon.json
-    dest: /etc/docker/daemon.json
-  become: true
-  register: docker_daemon_json_result
-
-# this could be done via a handler, but since it would only be used once not bothering
-- include_tasks: docker-enable-start-restart.yml
-  vars:
-    docker_service_state: restarted
-  when: docker_daemon_json_result.changed
-
-- name: make sure docker is running
-  include_tasks: docker-daemon-running.yml
+- name: Include OS-specific Docker tasks
+  include_tasks: "{{ docker_task_file }}"

@@ -1,27 +1,27 @@
  # Docker Swarm Management for Heavy Forwarders
- 
+
  ## Introduction
- 
+
  ### Problem
- 
+
  Managing "do everything" heavy forwarders is tedious: dependencies, deployment servers, conflicting configurations,
  failover.
- 
+
  This can be easier.
- 
+
  ### Solution
- 
+
  Containers allow us to independently manage one input, or group a handful of similar inputs without additional
  hardware, real or virtual.  They can also be shipped to another infrastructure without worrying about the other admins
  changing anything.
- 
+
  Docker Swarm enables scaling and failover for these containers.  Sprinkle in some persistent storage and your heavy
  forwarders are now significantly more resilient than before.
- 
+
  ## Basic Process
- 
+
  These playbooks provide you with this path:
- 
+
  * Deploy Docker Swarm for your environment
 
  * Define your heavy forwarder image
@@ -30,18 +30,18 @@
    * TAs (or other configs) to install via local file, templates, git repositories, etc.
    * Healthcheck index/sourcetype and expected event time period
    * Volumes for persistent storage
-   
+
 * Build your image, along with some convenient variants
 
    * Primary image
       * Intended to be deployed to swarm
       * Disables indexes, splunkweb
       * Configures license master
-      
+
    * Standalone image
       * Eases development efforts prior to deploying to swarm
       * Leaves splunkweb enabled
-   
+
 * Push your image to a registry
 
 * Deploy a service using your image
@@ -77,6 +77,70 @@ Once your inventory has been defined, you can provision your docker nodes by run
 
 `ansible-playbook -i <path-to-inventory-file> docker_nodes_provision.yml`
 
+This playbook (docker_nodes_provision.yml) supports automated Docker installation and configuration on both **CentOS** and **Ubuntu** hosts.
+
+## Features
+- Detects and handles CentOS and Ubuntu distributions
+- Installs Docker on manager and worker nodes
+- Optional `firewalld` support (disabled by default)
+
+## Enable Firewalld (Optional)
+
+By default, `firewalld` is **disabled**.
+To enable and configure `firewalld`, run the playbook with the `enable_firewall` tag:
+
+```bash
+ansible-playbook -i <path-to-inventory-file> docker_nodes_provision.yml --tags enable_firewall
+```
+
+### Additional Configuration
+
+You can also specify additional packages to be installed on CentOS and Ubuntu hosts by defining the following variables in your inventory:
+
+- `centos_packages`: A list of additional packages to install on CentOS hosts.
+- `ubuntu_packages`: A list of additional packages to install on Ubuntu hosts.
+
+For example:
+
+```yaml
+centos_packages:
+  - vim
+  - git
+  - curl
+
+ubuntu_packages:
+  - vim
+  - git
+  - curl
+```
+
+Additionally, the playbook uses the `system_architecture` variable to determine the architecture of the system (e.g., `amd64`, `arm64`) when adding the Docker repository. This ensures compatibility with the host's architecture.
+
+You can define the `system_architecture` variable explicitly in your inventory or allow it to be automatically detected by Ansible. For example:
+
+```yaml
+system_architecture: amd64
+```
+
+This variable is used in tasks like adding the Docker repository:
+
+```yaml
+apt_repository:
+  repo: "deb [arch={{ system_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+  state: present
+  filename: docker
+```
+
+The playbook uses the `ubuntu_prerequisites` variable to define the list of prerequisite packages that need to be installed on Ubuntu hosts. These packages are installed before configuring Docker.
+
+You can customize the `ubuntu_prerequisites` variable in your inventory or group variables file. For example:
+
+```yaml
+ubuntu_prerequisites:
+  - curl
+  - jq
+```
+
 ## Examples
 
 ### Simplest image definition
@@ -104,7 +168,7 @@ the host variables only.
     # against populated lookups to forward results to the indexing tier.  the forwarder license doesn't enable
     # this type of usage.
     license_master_uri: https://lm.example.org:8089
-    
+
 ### Splunk metrics.log healthchecking image
 
 #### But first, let's organize with group_vars
@@ -130,7 +194,7 @@ In [organized-environment/inventory.yml](examples/organized-environment/inventor
 
     # remember every image must have a version number
     version: 1.0.0
-    
+
     # in splunk's metrics.log
     # for the per_index_thruput group
     healthcheck_metrics_group: per_index_thruput
@@ -166,7 +230,7 @@ In our inventory, we have this in [group_vars/all.yml](examples/organized-enviro
         dest: splunk
         # because dest is, effectively, /opt/splunk, have this directory copied to a subdirectory
         dest_sub_path: etc/apps/docker_forwarder_outputs
-        
+
 This tells the build process to copy
 [files/docker_forwarder_outputs](examples/organized-environment/files/docker_forwarder_outputs) to the `splunk`
 staging path, and place it `etc/apps/docker_forwarder_outputs` under that path.
@@ -210,7 +274,7 @@ items to build your image, and if true that particular item will be included for
         dest_sub_path: etc/apps/docker_forwarder_outputs
         # but only when building the primary (not standalone) build
         condition: "{{ build_vars.primary_build }}"
-        
+
 This `condition` makes use of a variable defined in our "build variations" configuration, `primary_build`, which has
 a value of `True` when the non-standalone image is built.  Thus we have these image versions built:
 

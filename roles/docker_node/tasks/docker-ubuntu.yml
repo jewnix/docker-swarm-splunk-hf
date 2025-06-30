@@ -1,0 +1,74 @@
+- name: Install prerequisites
+  apt:
+    name: "{{ ubuntu_prerequisites }}"
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create keyrings directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Add Docker GPG key
+  shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  args:
+    creates: /etc/apt/keyrings/docker.asc
+  become: true
+
+- name: Set permissions on GPG key
+  file:
+    path: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+  become: true
+
+- name: Add Docker repository
+  apt_repository:
+    repo: "deb [arch={{ system_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    filename: docker
+  become: true
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+  become: true
+
+- name: Install Docker packages
+  apt:
+    name: "{{ ubuntu_docker_packages}}"
+    state: present
+  become: true
+
+- name: Add user to docker group
+  user:
+    name: "{{ docker_become_user }}"
+    groups: docker
+    append: yes
+  become: true
+
+# this will make use of the docker_service_state value set above
+# this will always get run to at least ensure the service is enabled/started, but will
+# also restart the service if any changes to the packages were made
+- include_tasks: docker-enable-start-restart.yml
+
+- name: make sure docker is running
+  include_tasks: docker-daemon-running.yml
+
+- name: install /etc/docker/daemon_ubuntu.json
+  template:
+    src: daemon_ubuntu.json
+    dest: /etc/docker/daemon.json
+  become: true
+  register: docker_daemon_json_result
+
+# this could be done via a handler, but since it would only be used once not bothering
+- include_tasks: docker-enable-start-restart.yml
+  vars:
+    docker_service_state: restarted
+  when: docker_daemon_json_result.changed
+
+- name: make sure docker is running
+  include_tasks: docker-daemon-running.yml

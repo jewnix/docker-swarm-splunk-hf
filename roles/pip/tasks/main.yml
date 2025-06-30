@@ -1,4 +1,4 @@
 - name: install pip
   package:
-    name: python2-pip
+    name: python3-pip
   become: true
